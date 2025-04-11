@@ -1,0 +1,71 @@
+{
+	"kind" : "toolchains",
+	"toolchains" : 
+	[
+		{
+			"compiler" : 
+			{
+				"id" : "GNU",
+				"implicit" : 
+				{
+					"includeDirectories" : 
+					[
+						"C:/MinGW avec Allegro 4/MinGW/lib/gcc/mingw32/6.3.0/include",
+						"C:/MinGW avec Allegro 4/MinGW/include",
+						"C:/MinGW avec Allegro 4/MinGW/lib/gcc/mingw32/6.3.0/include-fixed",
+						"C:/MinGW avec Allegro 4/MinGW/mingw32/include"
+					],
+					"linkDirectories" : 
+					[
+						"C:/MinGW avec Allegro 4/MinGW/lib/gcc/mingw32/6.3.0",
+						"C:/MinGW avec Allegro 4/MinGW/lib/gcc",
+						"C:/MinGW avec Allegro 4/MinGW/mingw32/lib",
+						"C:/MinGW avec Allegro 4/MinGW/lib"
+					],
+					"linkFrameworkDirectories" : [],
+					"linkLibraries" : 
+					[
+						"mingw32",
+						"gcc",
+						"moldname",
+						"mingwex",
+						"advapi32",
+						"shell32",
+						"user32",
+						"kernel32",
+						"mingw32",
+						"gcc",
+						"moldname",
+						"mingwex"
+					]
+				},
+				"path" : "C:/MinGW avec Allegro 4/MinGW/bin/gcc.exe",
+				"version" : "6.3.0"
+			},
+			"language" : "C",
+			"sourceFileExtensions" : 
+			[
+				"c",
+				"m"
+			]
+		},
+		{
+			"compiler" : 
+			{
+				"implicit" : {},
+				"path" : "C:/MinGW avec Allegro 4/MinGW/bin/windres.exe"
+			},
+			"language" : "RC",
+			"sourceFileExtensions" : 
+			[
+				"rc",
+				"RC"
+			]
+		}
+	],
+	"version" : 
+	{
+		"major" : 1,
+		"minor" : 0
+	}
+}
