@@ -15,6 +15,7 @@
 #define TEMPS_LIMITE         (10 * 60)    /* 1 min 30 @ 60 FPS */
 #define MAX_MISSILES_BOSS    50
 #define MAX_PSEUDO           15
+#define MAX_METEO 2    // nombre de météorites
 
 /* retours menu_pause */
 #define PAUSE_REPRENDRE      0
@@ -55,15 +56,21 @@ typedef struct {
     BITMAP *sprite_vie;
 } Vies;
 
+typedef struct {
+    int x, y, w, h, actif;
+} Meteore;
+
 /* Globals */
 Missile        missiles[MAX_MISSILES];
 MissileEnnemi  missiles_ennemis[MAX_MISSILES_ENNEMIS];
 Ennemi         ennemis[MAX_ENNEMIS];
 Boss           boss;
+Meteore meteores[MAX_METEO];
 
 /* Variables de progression à sauvegarder */
 int delai_en, frequence_en;
 int boss_apparu, boss_vaincu;
+int retour_menu_collision = 0;
 
 /* Prototypes */
 void initialisation_allegro(void);
@@ -307,17 +314,20 @@ void detecter_collisions_joueur_missiles_ennemis(Personnage *p, Vies *v, int mw,
 
 void detecter_collisions_joueur_ennemis(Personnage *p, Vies *v) {
     if (v->invincible) return;
-    for (int i = 0; i < MAX_ENNEMIS; i++) if (ennemis[i].actif)
-        if (p->x < ennemis[i].x+ennemis[i].w &&
-            p->x+p->w>ennemis[i].x &&
-            p->y < ennemis[i].y+ennemis[i].h &&
-            p->y+p->h>ennemis[i].y)
-        {
-            v->total_vies = 0;
-            v->points_vie_actuels = 0;
-            break;
+    for (int i = 0; i < MAX_ENNEMIS; i++) {
+        if (ennemis[i].actif) {
+            if (p->x < ennemis[i].x + ennemis[i].w &&
+                p->x + p->w > ennemis[i].x &&
+                p->y < ennemis[i].y + ennemis[i].h &&
+                p->y + p->h > ennemis[i].y) {
+                // Au lieu de v->total_vies = 0 etc.
+                retour_menu_collision = 1;
+                return;
+                }
         }
+    }
 }
+
 
 void detecter_collisions_missiles_boss(Boss *b, int mw, int mh) {
     if (!b->actif) return;
@@ -562,10 +572,47 @@ int menu_pause(const char *pseudo, Personnage *p, Vies *v, int *temps_jeu, BITMA
     }
 }
 
+void initialiser_meteores() {
+    for (int i = 0; i < MAX_METEO; i++) {
+        meteores[i].w = 100;  // largeur en pixels de ton sprite météore
+        meteores[i].h =  80;  // hauteur
+        // positions fixes ou aléatoires
+        meteores[i].x = 200 + i * 150;
+        meteores[i].y = 100 + (i%2)*200;
+        meteores[i].actif = 1;
+    }
+}
+
+void dessiner_meteores(BITMAP *sprite, BITMAP *buffer) {
+    for (int i = 0; i < MAX_METEO; i++) {
+        if (meteores[i].actif) {
+            masked_stretch_blit(sprite, buffer,
+                0,0, sprite->w,sprite->h,
+                meteores[i].x, meteores[i].y,
+                meteores[i].w, meteores[i].h);
+        }
+    }
+}
+
+void detecter_collisions_joueur_meteores(Personnage *p) {
+    for (int i = 0; i < MAX_METEO; i++) {
+        if (meteores[i].actif) {
+            if (p->x < meteores[i].x + meteores[i].w &&
+                p->x + p->w > meteores[i].x &&
+                p->y < meteores[i].y + meteores[i].h &&
+                p->y + p->h > meteores[i].y) {
+                retour_menu_collision = 1;
+                return;
+                }
+        }
+    }
+}
+
 int main() {
     BITMAP *buffer, *fondmenu;
     BITMAP *arriereplan, *sprite_perso, *sprite_missile;
     BITMAP *sprite_ennemi, *sprite_vie, *sprite_missile_ennemi, *sprite_boss;
+    BITMAP *sprite_meteorite;
     Personnage perso;
     Vies vies;
     char pseudo[MAX_PSEUDO+1];
@@ -574,7 +621,7 @@ int main() {
     int mw = 30, mh = 15, me_w = 20, me_h = 10;
     int delai_tir = 0, cadence_tir = 10;
     int temps_jeu = 0;
-    int quitVolontaire = 0, victoire = 0;
+    int quitVolontaire = 0, victoire = 0, fin_victoire = 0, retour_menu_collision = 0;
 
     /* 1) Init Allegro */
     initialisation_allegro();
@@ -587,19 +634,20 @@ int main() {
         return EXIT_FAILURE;
     }
 
-    /* 3) Boucle principale “running” */
+    /* Positions « monde » des météorites */
+    const int base_meteo_x[MAX_METEO] = { 300, 800 };
+    const int base_meteo_y[MAX_METEO] = { 150, 400 };
+
     int running = 1;
     while (running) {
-        /* 3a) Saisie du pseudo + menu principal */
+        /* --- pseudo + menu principal --- */
         fondmenu = charger_bitmap_avec_verification(FOND_MENU_FILE);
         menu_saisie_pseudo(pseudo, buffer, fondmenu);
         int choix = menu_principal(pseudo, buffer, fondmenu);
         destroy_bitmap(fondmenu);
-        if (choix == 2)  /* Quitter */ {
-            break;
-        }
+        if (choix == 2) break;  /* Quitter */
 
-        /* 3b) Chargement des bitmaps du jeu */
+        /* --- chargement des sprites de jeu --- */
         arriereplan           = charger_bitmap_avec_verification("arriereplan1.bmp");
         sprite_perso          = charger_bitmap_avec_verification("personnage1.bmp");
         sprite_missile        = charger_bitmap_avec_verification("missile.bmp");
@@ -607,62 +655,58 @@ int main() {
         sprite_vie            = charger_bitmap_avec_verification("vie.bmp");
         sprite_missile_ennemi = charger_bitmap_avec_verification("missile2.bmp");
         sprite_boss           = charger_bitmap_avec_verification("BOSS1.bmp");
+        sprite_meteorite      = charger_bitmap_avec_verification("meteorite.bmp");
 
-        /* 3c) Toujours initialiser le perso et les vies (sprites, taille, vitesse) */
+        /* Initialise le joueur et ses vies */
         initialiser_personnage(&perso, 100, HAUTEUR/2, 80, 80, 7, sprite_perso);
         initialiser_vies(&vies, sprite_vie);
 
-        /* 3d) Charger ou réinitialiser l’état de la partie */
+        /* Nouvelle partie ou continuer */
         if (choix == 1) {
             load_game(pseudo, &temps_jeu, &perso, &vies);
         } else {
-            temps_jeu     = 0;
-            delai_en      = 0;
-            frequence_en  = 30;
-            boss_apparu   = 0;
-            boss_vaincu   = 0;
+            temps_jeu    = 0;
+            delai_en     = 0;
+            frequence_en = 30;
+            boss_apparu  = 0;
+            boss_vaincu  = 0;
         }
+        retour_menu_collision = 0;
 
-        /* 3e) Initialisation des autres entités */
+        /* Initialise ennemis, boss, missiles */
         initialiser_ennemis(sprite_ennemi);
         initialiser_boss(&boss, sprite_boss, perso.w, perso.h);
         initialiser_missiles();
         initialiser_missiles_ennemis();
 
-        /* 3f) Boucle “playing” (jeu) */
+        /* Taille à l’écran des météorites (10% du sprite) */
+        float scale = 0.10f;
+        int w_meteo = sprite_meteorite->w * scale;
+        int h_meteo = sprite_meteorite->h * scale;
+
+        /* Boucle de jeu */
         int playing = 1;
         while (playing && !key[KEY_ESC] && vies.total_vies > 0) {
             /* Pause */
             if (key[KEY_P]) {
                 while (key[KEY_P]) rest(10);
                 int act = menu_pause(pseudo, &perso, &vies, &temps_jeu, buffer);
-                if (act == PAUSE_QUITTER) {
-                    quitVolontaire = 1;
-                    running = 0;
-                    playing = 0;
-                    break;
-                }
-                else if (act == PAUSE_RETURN_MENU) {
-                    playing = 0;
-                    break;
-                }
-                /* sinon PAUSE_REPRENDRE */
+                if (act == PAUSE_QUITTER) { quitVolontaire = 1; running = 0; playing = 0; break; }
+                if (act == PAUSE_RETURN_MENU) { playing = 0; break; }
             }
 
-            /* Mise à jour du temps */
+            /* Compte le temps et apparition du boss */
             temps_jeu++;
-
-            /* Apparition du boss */
             if (temps_jeu >= TEMPS_LIMITE && !boss_apparu) {
-                boss.actif = 1;
-                boss_apparu = 1;
+                boss.actif   = 1;
+                boss_apparu  = 1;
             }
 
-            /* Scrolling */
+            /* Scrolling du fond */
             bg_x -= vitesse_bg;
             if (bg_x <= -arriereplan->w) bg_x += arriereplan->w;
 
-            /* Déplacements */
+            /* Déplacement et tir du joueur */
             deplacer_personnage(&perso);
             if (key[KEY_SPACE] && delai_tir <= 0) {
                 tirer_missile(&perso, mh);
@@ -670,58 +714,87 @@ int main() {
             }
             if (delai_tir > 0) delai_tir--;
 
-            /* Tirs boss vs ennemis */
+            /* Tirs boss / ennemis */
             if (boss.actif) {
                 deplacer_boss(&boss);
                 if (--boss.delai_tir <= 0 && boss.missiles_tires < MAX_MISSILES_BOSS) {
                     tirer_missile_boss(&boss, me_h);
-                    boss.delai_tir = boss.cadence_tir;
+                    boss.delai_tir     = boss.cadence_tir;
                     boss.missiles_tires++;
                 }
-            }
-            else if (!boss_vaincu) {
-                delai_en++;
-                if (delai_en >= frequence_en) {
+            } else if (!boss_vaincu) {
+                if (++delai_en >= frequence_en) {
                     creer_ennemi();
-                    delai_en = 0;
-                    frequence_en = 30 + rand() % 50;
+                    delai_en     = 0;
+                    frequence_en = 30 + rand()%50;
                 }
                 for (int i = 0; i < MAX_ENNEMIS; i++) {
-                    if (ennemis[i].actif && ennemis[i].missiles_tires < 3) {
-                        ennemis[i].delai_tir--;
-                        if (ennemis[i].delai_tir <= 0) {
-                            tirer_missile_ennemi(&ennemis[i], me_h);
-                            ennemis[i].delai_tir   = ennemis[i].cadence_tir;
-                            ennemis[i].missiles_tires++;
-                        }
+                    if (ennemis[i].actif && ennemis[i].missiles_tires < 3 && --ennemis[i].delai_tir <= 0) {
+                        tirer_missile_ennemi(&ennemis[i], me_h);
+                        ennemis[i].delai_tir     = ennemis[i].cadence_tir;
+                        ennemis[i].missiles_tires++;
                     }
                 }
             }
 
-            /* Mises à jour & collisions */
+            /* Mises à jour des entités */
             mettre_a_jour_missiles();
             mettre_a_jour_missiles_ennemis();
             mettre_a_jour_ennemis();
             mettre_a_jour_invincibilite(&vies);
 
+            /* Collisions missiles → ennemis */
             detecter_collisions_missiles_ennemis(mw, mh);
-            detecter_collisions_joueur_missiles_ennemis(&perso, &vies, me_w, me_h);
-            detecter_collisions_joueur_ennemis(&perso, &vies);
+
+            /* Collisions missiles → boss (DÉGÂTS) */
             if (boss.actif) {
                 detecter_collisions_missiles_boss(&boss, mw, mh);
-                detecter_collisions_joueur_boss(&perso, &boss, &vies);
                 if (boss.pv <= 0) {
-                    boss_vaincu = 1;
-                    victoire    = 1;
-                    boss.actif  = 0;
+                    /* On a tué le boss */
+                    boss.actif   = 0;
+                    boss_vaincu  = 1;
+                    victoire     = 1;
+                    fin_victoire = 1;
+                    playing      = 0;
+                    running      = 0;
                     break;
                 }
             }
 
-            /* Rendu */
+            /* Collisions ennemis/missiles ennemis → joueur */
+            detecter_collisions_joueur_missiles_ennemis(&perso, &vies, me_w, me_h);
+            detecter_collisions_joueur_ennemis(&perso, &vies);
+            if (boss.actif) detecter_collisions_joueur_boss(&perso, &boss, &vies);
+
+            /* Collisions joueur ↔ météorites → retour menu */
+            for (int i = 0; i < MAX_METEO; i++) {
+                int mx = base_meteo_x[i] + bg_x;
+                if (mx < -w_meteo) mx += arriereplan->w;
+                if (perso.x < mx + w_meteo &&
+                    perso.x + perso.w > mx &&
+                    perso.y < base_meteo_y[i] + h_meteo &&
+                    perso.y + perso.h > base_meteo_y[i]) {
+                    retour_menu_collision = 1;
+                    break;
+                }
+            }
+            if (retour_menu_collision) { retour_menu_collision = 0; playing = 0; break; }
+
+            /* --- Rendu --- */
             clear_bitmap(buffer);
             blit(arriereplan, buffer, 0,0, bg_x,0, arriereplan->w, HAUTEUR);
             blit(arriereplan, buffer, 0,0, bg_x+arriereplan->w,0, arriereplan->w, HAUTEUR);
+
+            /* Dessin des météorites */
+            for (int i = 0; i < MAX_METEO; i++) {
+                int mx = base_meteo_x[i] + bg_x;
+                if (mx < -w_meteo) mx += arriereplan->w;
+                masked_stretch_blit(sprite_meteorite, buffer,
+                    0,0, sprite_meteorite->w, sprite_meteorite->h,
+                    mx, base_meteo_y[i],
+                    w_meteo, h_meteo);
+            }
+
             dessiner_ennemis(buffer);
             if (boss.actif)   afficher_boss(&boss, buffer);
             afficher_personnage(&perso, buffer, &vies);
@@ -730,31 +803,29 @@ int main() {
             afficher_vies(&vies, buffer);
             if (boss.actif) afficher_vies_boss(&boss, sprite_vie, buffer);
 
+            /* Texte temps / boss / victoire */
             if (!boss_apparu) {
                 int tt = (TEMPS_LIMITE - temps_jeu) / 60;
-                textprintf_ex(buffer, font,
-                    LARGEUR/2-50, 10,
-                    makecol(255,255,0), -1,
-                    "Temps: %02d:%02d", tt/60, tt%60);
+                textprintf_ex(buffer, font, LARGEUR/2-50, 10,
+                               makecol(255,255,0), -1,
+                               "Temps: %02d:%02d", tt/60, tt%60);
             }
             else if (boss.actif) {
-                textprintf_ex(buffer, font,
-                    LARGEUR/2-50, 10,
-                    makecol(255,0,0), -1,
-                    "BOSS!");
+                textprintf_ex(buffer, font, LARGEUR/2-50, 10,
+                               makecol(255,0,0), -1,
+                               "BOSS!");
             }
             else if (boss_vaincu) {
-                textprintf_ex(buffer, font,
-                    LARGEUR/2-80, 10,
-                    makecol(0,255,0), -1,
-                    "VICTOIRE!");
+                textprintf_ex(buffer, font, LARGEUR/2-80, 10,
+                               makecol(0,255,0), -1,
+                               "VICTOIRE!");
             }
 
             blit(buffer, screen, 0,0, 0,0, LARGEUR, HAUTEUR);
             rest(16);
         }
 
-        /* 3g) Nettoyage des sprites de la partie */
+        /* Destruction des bitmaps de la partie */
         destroy_bitmap(arriereplan);
         destroy_bitmap(sprite_perso);
         destroy_bitmap(sprite_missile);
@@ -762,28 +833,21 @@ int main() {
         destroy_bitmap(sprite_vie);
         destroy_bitmap(sprite_missile_ennemi);
         destroy_bitmap(sprite_boss);
+        destroy_bitmap(sprite_meteorite);
     }
 
-    /* 4) Écran final si on n’a pas quitté volontairement */
-    if (!quitVolontaire) {
-        clear_bitmap(buffer);
-        if (vies.total_vies <= 0) {
-            textprintf_centre_ex(buffer, font,
-                LARGEUR/2, HAUTEUR/2,
-                makecol(255,0,0), -1,
-                "GAME OVER");
-        }
-        else if (victoire) {
-            textprintf_centre_ex(buffer, font,
-                LARGEUR/2, HAUTEUR/2,
-                makecol(0,255,0), -1,
-                "VICTOIRE!");
-        }
-        blit(buffer, screen, 0,0, 0,0, LARGEUR, HAUTEUR);
-        rest(3000);
+    /* 4) Écran final */
+    clear_bitmap(buffer);
+    if (fin_victoire) {
+        textprintf_centre_ex(buffer, font,
+            LARGEUR/2, HAUTEUR/2,
+            makecol(0,255,0), -1,
+            "VICTOIRE !");
     }
 
-    /* 5) Cleanup final */
+    blit(buffer, screen, 0,0, 0,0, LARGEUR, HAUTEUR);
+    rest(3000);
+
     destroy_bitmap(buffer);
     allegro_exit();
     return 0;
