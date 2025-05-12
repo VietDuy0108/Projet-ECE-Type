@@ -4,7 +4,7 @@
 #include <string.h>
 #include <math.h>
 
-#define FOND_MENU_FILE       "fondmenu.bmp"
+#define FOND_MENU_FILE       "C:/Users/fireb/CLionProjects/ProjetInformatique2/cmake-build-debug/ImageJeu/fondmenu.bmp"
 #define LARGEUR              1024
 #define HAUTEUR              768
 #define MAX_MISSILES         20
@@ -71,6 +71,8 @@ Meteore meteores[MAX_METEO];
 int delai_en, frequence_en;
 int boss_apparu, boss_vaincu;
 int retour_menu_collision = 0;
+int heart_pulse_timer = 0;    // compte à rebours du battement
+const int HEART_PULSE_DURATION = 30;  // durée du battement en frames (~0.5s à 60FPS)
 
 /* Prototypes */
 void initialisation_allegro(void);
@@ -90,7 +92,7 @@ void mettre_a_jour_missiles(void);
 void mettre_a_jour_missiles_ennemis(void);
 void mettre_a_jour_ennemis(void);
 void mettre_a_jour_invincibilite(Vies*);
-void detecter_collisions_missiles_ennemis(int,int);
+int detecter_collisions_missiles_ennemis(int mw, int mh);
 void detecter_collisions_joueur_missiles_ennemis(Personnage*,Vies*,int,int);
 void detecter_collisions_joueur_ennemis(Personnage*,Vies*);
 void detecter_collisions_missiles_boss(Boss*,int,int);
@@ -280,17 +282,20 @@ void mettre_a_jour_invincibilite(Vies *v) {
         v->invincible = 0;
 }
 
-void detecter_collisions_missiles_ennemis(int mw, int mh) {
+int detecter_collisions_missiles_ennemis(int mw, int mh) {
+    int kills = 0;
     for (int i = 0; i < MAX_MISSILES; i++) if (missiles[i].actif)
         for (int j = 0; j < MAX_ENNEMIS; j++) if (ennemis[j].actif)
             if (missiles[i].x < ennemis[j].x + ennemis[j].w &&
-                missiles[i].x+mw > ennemis[j].x &&
-                missiles[i].y < ennemis[j].y+ennemis[j].h &&
-                missiles[i].y+mh> ennemis[j].y)
+                missiles[i].x + mw > ennemis[j].x &&
+                missiles[i].y < ennemis[j].y + ennemis[j].h &&
+                missiles[i].y + mh > ennemis[j].y)
             {
                 missiles[i].actif = 0;
                 ennemis[j].actif = 0;
+                kills++;
             }
+    return kills;
 }
 
 void detecter_collisions_joueur_missiles_ennemis(Personnage *p, Vies *v, int mw, int mh) {
@@ -306,6 +311,7 @@ void detecter_collisions_joueur_missiles_ennemis(Personnage *p, Vies *v, int mw,
                 if (--v->total_vies > 0)
                     v->points_vie_actuels = POINTS_VIE_PAR_VIE;
             }
+            heart_pulse_timer = HEART_PULSE_DURATION;
             v->invincible = 1;
             v->duree_invincibilite = 60;
             break;
@@ -392,15 +398,29 @@ void afficher_boss(Boss *b, BITMAP *buf) {
 }
 
 void afficher_vies(Vies *v, BITMAP *buf) {
-    int px = 10, py = 10, sz = 30, esp = sz+5;
-    for (int i = 0; i < v->total_vies; i++)
-        masked_stretch_blit(v->sprite_vie, buf, 0,0,
-                            v->sprite_vie->w, v->sprite_vie->h,
-                            px + i*esp, py,
-                            sz, sz);
-    textprintf_ex(buf, font, px, py+sz+5, makecol(255,255,255), -1,
-                  "PV: %d/%d", v->points_vie_actuels, POINTS_VIE_PAR_VIE);
+    int base_sz = 30;                    // taille normale
+    int pulse = 0;
+    if (heart_pulse_timer > 0) {
+        // on fait monter puis retomber la taille selon un sinus
+        double t = (double)(HEART_PULSE_DURATION - heart_pulse_timer)
+                   / HEART_PULSE_DURATION * M_PI;
+        pulse = (int)(5 * sin(t));      // amplitude = ±5 pixels
+    }
+    int sz = base_sz + pulse;
+    int px = 10, py = 10, esp = sz + 5;
+
+    for (int i = 0; i < v->total_vies; i++) {
+        masked_stretch_blit(v->sprite_vie, buf,
+                            0, 0, v->sprite_vie->w, v->sprite_vie->h,
+                            px + i*esp, py, sz, sz);
+    }
+    textprintf_ex(buf, font,
+                  px, py + sz + 5,
+                  makecol(255,255,255), -1,
+                  "PV: %d/%d",
+                  v->points_vie_actuels, POINTS_VIE_PAR_VIE);
 }
+
 
 void afficher_vies_boss(Boss *b, BITMAP *sv, BITMAP *buf) {
     if (!b->actif) return;
@@ -622,6 +642,7 @@ int main() {
     int delai_tir = 0, cadence_tir = 10;
     int temps_jeu = 0;
     int quitVolontaire = 0, victoire = 0, fin_victoire = 0, retour_menu_collision = 0;
+    int compteur_kills = 0;
 
     /* 1) Init Allegro */
     initialisation_allegro();
@@ -648,14 +669,14 @@ int main() {
         if (choix == 2) break;  /* Quitter */
 
         /* --- chargement des sprites de jeu --- */
-        arriereplan           = charger_bitmap_avec_verification("arriereplan1.bmp");
-        sprite_perso          = charger_bitmap_avec_verification("personnage1.bmp");
-        sprite_missile        = charger_bitmap_avec_verification("missile.bmp");
-        sprite_ennemi         = charger_bitmap_avec_verification("ennemi.bmp");
-        sprite_vie            = charger_bitmap_avec_verification("vie.bmp");
-        sprite_missile_ennemi = charger_bitmap_avec_verification("missile2.bmp");
-        sprite_boss           = charger_bitmap_avec_verification("BOSS1.bmp");
-        sprite_meteorite      = charger_bitmap_avec_verification("meteorite.bmp");
+        arriereplan           = charger_bitmap_avec_verification("C:/Users/fireb/CLionProjects/ProjetInformatique2/cmake-build-debug/ImageJeu/arriereplan1.bmp");
+        sprite_perso          = charger_bitmap_avec_verification("C:/Users/fireb/CLionProjects/ProjetInformatique2/cmake-build-debug/ImageJeu/personnage1.bmp");
+        sprite_missile        = charger_bitmap_avec_verification("C:/Users/fireb/CLionProjects/ProjetInformatique2/cmake-build-debug/ImageJeu/missile.bmp");
+        sprite_ennemi         = charger_bitmap_avec_verification("C:/Users/fireb/CLionProjects/ProjetInformatique2/cmake-build-debug/ImageJeu/ennemi.bmp");
+        sprite_vie            = charger_bitmap_avec_verification("C:/Users/fireb/CLionProjects/ProjetInformatique2/cmake-build-debug/ImageJeu/vie.bmp");
+        sprite_missile_ennemi = charger_bitmap_avec_verification("C:/Users/fireb/CLionProjects/ProjetInformatique2/cmake-build-debug/ImageJeu/missile2.bmp");
+        sprite_boss           = charger_bitmap_avec_verification("C:/Users/fireb/CLionProjects/ProjetInformatique2/cmake-build-debug/ImageJeu/BOSS1.bmp");
+        sprite_meteorite      = charger_bitmap_avec_verification("C:/Users/fireb/CLionProjects/ProjetInformatique2/cmake-build-debug/ImageJeu/meteorite.bmp");
 
         /* Initialise le joueur et ses vies */
         initialiser_personnage(&perso, 100, HAUTEUR/2, 80, 80, 7, sprite_perso);
@@ -742,9 +763,23 @@ int main() {
             mettre_a_jour_missiles_ennemis();
             mettre_a_jour_ennemis();
             mettre_a_jour_invincibilite(&vies);
+            if (heart_pulse_timer > 0)
+                heart_pulse_timer--;
 
             /* Collisions missiles → ennemis */
-            detecter_collisions_missiles_ennemis(mw, mh);
+            {
+                int kills = detecter_collisions_missiles_ennemis(mw, mh);
+                if (kills > 0) {
+                    compteur_kills += kills;
+                    // toutes les 5 victimes, on gagne 1 vie
+                    if (compteur_kills >= 15) {
+                        compteur_kills -= 15;
+                        vies.total_vies++;
+                        // optionnel : réinitialiser les PV courants à plein
+                        vies.points_vie_actuels = POINTS_VIE_PAR_VIE;
+                    }
+                }
+            }
 
             /* Collisions missiles → boss (DÉGÂTS) */
             if (boss.actif) {
@@ -809,6 +844,9 @@ int main() {
                 textprintf_ex(buffer, font, LARGEUR/2-50, 10,
                                makecol(255,255,0), -1,
                                "Temps: %02d:%02d", tt/60, tt%60);
+                textprintf_ex(buffer, font, LARGEUR - 150, 10,
+                                    makecol(255,255,255), -1,
+                                    "TUÉS : %d", compteur_kills);
             }
             else if (boss.actif) {
                 textprintf_ex(buffer, font, LARGEUR/2-50, 10,
