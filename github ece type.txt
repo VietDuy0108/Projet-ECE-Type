@@ -1,0 +1,178 @@
+#include <allegro.h>
+#include <time.h>
+#include <stdlib.h>
+#include <stdio.h>
+#include "commun.h"
+#include "niv2.h"
+#include "niv3.h"
+
+
+
+
+int lancer_niv2(void) {
+    BITMAP *buffer;
+    BITMAP *arriereplan, *sprite_perso, *sprite_missile;
+    BITMAP *sprite_ennemi, *sprite_vie, *sprite_missile_ennemi;
+    BITMAP *sprite_meteorite;
+    Personnage perso;
+    Vies vies;
+    int bg_x = 0, vitesse_bg = 2;
+    int mw = 30, mh = 15, me_w = 20, me_h = 10;
+    int delai_tir = 0, cadence_tir = 10;
+    int temps_jeu = 0;
+    int fin_victoire = 0;
+    int quitVolontaire = 0;
+    char pseudo[MAX_PSEUDO+1];
+    int kill = 0;
+    int bouclier = 0;
+    int kill_count = 0;
+
+
+
+
+
+
+
+
+    buffer = create_bitmap(LARGEUR, HAUTEUR);
+    if (!buffer) {
+        allegro_message("Erreur : impossible de créer buffer");
+        allegro_exit();
+        return EXIT_FAILURE;
+    }
+
+    arriereplan           = charger_bitmap_avec_verification("arriereplan3.bmp");
+    sprite_perso          = charger_bitmap_avec_verification("personnage1.bmp");
+    sprite_perso2         = charger_bitmap_avec_verification("personnage2.bmp");
+    sprite_missile        = charger_bitmap_avec_verification("missile.bmp");
+    sprite_ennemi         = charger_bitmap_avec_verification("ennemiNiv3.bmp");
+    sprite_vie            = charger_bitmap_avec_verification("vie.bmp");
+    sprite_missile_ennemi = charger_bitmap_avec_verification("missile2.bmp");
+    sprite_meteorite      = charger_bitmap_avec_verification("meteorite.bmp");
+    sprite_arme           = charger_bitmap_avec_verification("ArmeNiv3Bonus.bmp");
+
+
+    initialiser_personnage(&perso, 100, HAUTEUR / 2, 80, 80, 7, sprite_perso);
+    initialiser_vies(&vies, sprite_vie);
+
+    temps_jeu = 0;
+    delai_en = boss_apparu = boss_vaincu = 0;
+    frequence_en = 60;
+
+
+    boss.pv = 30;
+
+    retour_menu_collision = 0;
+    initialiser_ennemis(sprite_ennemi);
+    initialiser_missiles();
+    initialiser_missiles_ennemis();
+
+    int playing = 1;
+
+    kill_count = 0;
+    char deja_tue[MAX_ENNEMIS] = {0};
+
+    while (playing && !key[KEY_ESC] && vies.total_vies > 0) {
+        if (key[KEY_P]) {
+            while (key[KEY_P]) rest(10);
+            int act = menu_pause(pseudo, &perso, &vies, &temps_jeu, buffer);
+            if (act == PAUSE_QUITTER) { quitVolontaire = 1; playing = 0; break; }
+            if (act == PAUSE_RETURN_MENU) { playing = 0; break; }
+        }
+        temps_jeu++;
+
+        if (temps_jeu >= TEMPS_LIMITE) {
+            playing = 0;   // Sort de la boucle
+            return lancer_niv3();  //lancement niv3
+        }
+
+        if (temps_jeu == 60 * 20 && arme_state == 0) {
+            arme_state = 1;
+            arme_x = 100 + rand() % (LARGEUR - 100);
+            arme_y = 100 + rand() % (HAUTEUR - 100);
+        }
+
+
+
+        deplacer_personnage(&perso);
+        if (key[KEY_SPACE] && delai_tir <= 0) {
+            if (arme_state == 2)
+                tirer_triplet(&perso, mh);
+            else
+                tirer_missile(&perso, mh);
+            delai_tir = cadence_tir;
+        }
+        if (delai_tir > 0) delai_tir--;
+
+        bg_x -= vitesse_bg;
+        if (bg_x <= -arriereplan->w) bg_x += arriereplan->w;
+
+        if (++delai_en >= frequence_en) {
+            creer_ennemi();
+            delai_en = 0;
+            if (frequence_en > 15) frequence_en--;
+        }
+
+        mettre_a_jour_missiles();
+        mettre_a_jour_missiles_ennemis();
+        mettre_a_jour_ennemis();
+
+        for (int i = 0; i < MAX_ENNEMIS; i++) { // tirs missiles ennemis suivant cadence
+            if (ennemis[i].actif && --ennemis[i].delai_tir <= 0) {
+                tirer_missile_ennemi(&ennemis[i], me_h);
+                ennemis[i].delai_tir = ennemis[i].cadence_tir;
+                ennemis[i].missiles_tires++;
+            }
+        }
+
+        mettre_a_jour_invincibilite(&vies);
+        detecter_collisions_missiles_ennemis(mw, mh, &kill_count, &bouclier);
+
+
+        detecter_collisions_joueur_missiles_ennemis(&perso, &vies, me_w, me_h, &bouclier);
+        detecter_collisions_joueur_ennemis(&perso, &vies);
+
+
+        deplacer_arme_bonus();
+        detecter_collision_arme_bonus(&perso);
+
+        clear_bitmap(buffer);
+        blit(arriereplan, buffer, 0, 0, bg_x, 0, arriereplan->w, HAUTEUR);
+        blit(arriereplan, buffer, 0, 0, bg_x + arriereplan->w, 0, arriereplan->w, HAUTEUR);
+
+        dessiner_ennemis(buffer);
+
+        afficher_personnage(&perso, buffer, &vies);
+        dessiner_missiles(sprite_missile, buffer, mw, mh);
+        dessiner_missiles_ennemis(sprite_missile_ennemi, buffer, me_w, me_h);
+        afficher_vies(&vies, buffer);
+        afficher_arme_bonus(buffer);
+
+        int tt = (TEMPS_LIMITE - temps_jeu) / 60;
+        if (tt < 0) tt = 0;
+        textprintf_ex(buffer, font, LARGEUR / 2 - 50, 10,
+                      makecol(255, 255, 0), -1,
+                      "Temps: %02d:%02d", tt / 60, tt % 60);
+
+
+        blit(buffer, screen, 0, 0, 0, 0, LARGEUR, HAUTEUR);
+        rest(16);
+    }
+
+    destroy_bitmap(arriereplan);
+    destroy_bitmap(sprite_perso);
+    destroy_bitmap(sprite_missile);
+    destroy_bitmap(sprite_ennemi);
+    destroy_bitmap(sprite_vie);
+    destroy_bitmap(sprite_missile_ennemi);
+    destroy_bitmap(sprite_meteorite);
+    destroy_bitmap(buffer);
+    destroy_bitmap(sprite_perso2);
+
+
+
+    return 0;
+}
+
+
+
